@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -8,6 +9,9 @@ import (
 	"time"
 )
 
+// TCPOutput used for sending raw tcp payloads
+// Currently used for internal communication between listener and replay server
+// Can be used for transfering binary payloads like protocol buffers
 type TCPOutput struct {
 	address  string
 	limit    int
@@ -15,6 +19,8 @@ type TCPOutput struct {
 	bufStats *GorStat
 }
 
+// NewTCPOutput constructor for TCPOutput
+// Initialize 10 workers which hold keep-alive connection
 func NewTCPOutput(address string) io.Writer {
 	o := new(TCPOutput)
 
@@ -51,10 +57,12 @@ func (o *TCPOutput) worker() {
 }
 
 func (o *TCPOutput) Write(data []byte) (n int, err error) {
-	new_buf := make([]byte, len(data)+2)
-	data = append(data, []byte("¶")...)
-	copy(new_buf, data)
-	o.buf <- new_buf
+	// Hex encoding always 2x number of bytes
+	encoded := make([]byte, len(data)*2+1)
+	hex.Encode(encoded, data)
+	encoded[len(encoded)-1] = '\n'
+	o.buf <- encoded
+
 	if Settings.outputTCPStats {
 		o.bufStats.Write(len(o.buf))
 	}

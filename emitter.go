@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Start initialize loop for sending data from inputs to outputs
 func Start(stop chan int) {
 	for _, in := range Plugins.Inputs {
 		go CopyMulty(in, Plugins.Outputs...)
@@ -19,19 +20,33 @@ func Start(stop chan int) {
 	}
 }
 
-// Copy from 1 reader to multiple writers
+// CopyMulty copies from 1 reader to multiple writers
 func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 	buf := make([]byte, 5*1024*1024)
 	wIndex := 0
+	modifier := NewHTTPModifier(&Settings.modifierConfig)
 
 	for {
 		nr, er := src.Read(buf)
 		if nr > 0 && len(buf) > nr {
-			Debug("Sending", src, ": ", string(buf[0:nr]))
+			payload := buf[0:nr]
+
+			if modifier != nil {
+				payload = modifier.Rewrite(payload)
+
+				// If modifier tells to skip request
+				if len(payload) == 0 {
+					continue
+				}
+			}
+
+			if Settings.debug {
+				Debug("[EMITTER] Sending payload, size:", len(payload), "First 500 bytes:", string(payload[0:500]))
+			}
 
 			if Settings.splitOutput {
 				// Simple round robin
-				writers[wIndex].Write(buf[0:nr])
+				writers[wIndex].Write(payload)
 
 				wIndex++
 
@@ -40,7 +55,7 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 				}
 			} else {
 				for _, dst := range writers {
-					dst.Write(buf[0:nr])
+					dst.Write(payload)
 				}
 			}
 

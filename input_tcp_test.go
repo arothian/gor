@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"io"
 	"log"
 	"net"
@@ -38,10 +39,10 @@ func TestTCPInput(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		new_buf := make([]byte, len(msg)+2)
-		msg = append(msg, []byte("¶")...)
-		copy(new_buf, msg)
-		conn.Write(new_buf)
+
+		encoded := make([]byte, len(msg)*2)
+		hex.Encode(encoded, msg)
+		conn.Write(append(encoded, '\n'))
 	}
 
 	wg.Wait()
@@ -82,10 +83,10 @@ func BenchmarkTCPInput(b *testing.B) {
 			for {
 				data := <-dataChan
 
-				new_buf := make([]byte, len(data)+2)
+				buf := make([]byte, len(data)+2)
 				data = append(data, []byte("¶")...)
-				copy(new_buf, data)
-				conn.Write(new_buf)
+				copy(buf, data)
+				conn.Write(buf)
 			}
 		}(conn)
 	}

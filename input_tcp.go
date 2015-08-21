@@ -2,20 +2,22 @@ package main
 
 import (
 	"bufio"
-	"io"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"net"
+	"os"
 )
 
-// Can be tested using nc tool:
-//    echo "asdad" | nc 127.0.0.1 27017
-//
+// TCPInput used for internal communication
+// It expected hex encoded data
 type TCPInput struct {
 	data     chan []byte
 	address  string
 	listener net.Listener
 }
 
+// NewTCPInput constructor for TCPInput, accepts address with port
 func NewTCPInput(address string) (i *TCPInput) {
 	i = new(TCPInput)
 	i.data = make(chan []byte)
@@ -59,24 +61,21 @@ func (i *TCPInput) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
+	scanner := bufio.NewScanner(reader)
 
-	for {
-		buf, err := reader.ReadBytes('¶')
-		if err == io.EOF {
-			return
-		} else if err != nil {
-			log.Println("Unexpected error in input tcp connection", err)
-			return
+	for scanner.Scan() {
+		encodedPayload := scanner.Bytes()
+		// Hex encoding always 2x number of bytes
+		decoded := make([]byte, len(encodedPayload)/2)
+		_, err := hex.Decode(decoded, encodedPayload)
+		if err != nil {
+			log.Println("[TCPInput] failed to hex decode TCP payload:", err)
 		}
-		buf_len := len(buf)
-		if buf_len > 0 {
-			new_buf_len := len(buf) - 2
-			if new_buf_len > 0 {
-				new_buf := make([]byte, new_buf_len)
-				copy(new_buf, buf[:new_buf_len])
-				i.data <- new_buf
-			}
-		}
+		i.data <- decoded
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "Unexpected error in input tcp connection:", err)
 	}
 }
 

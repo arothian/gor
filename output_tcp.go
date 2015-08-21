@@ -5,8 +5,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
+// TCPOutput used for sending raw tcp payloads
+// Currently used for internal communication between listener and replay server
+// Can be used for transfering binary payloads like protocol buffers
 type TCPOutput struct {
 	address  string
 	limit    int
@@ -14,6 +18,8 @@ type TCPOutput struct {
 	bufStats *GorStat
 }
 
+// NewTCPOutput constructor for TCPOutput
+// Initialize 10 workers which hold keep-alive connection
 func NewTCPOutput(address string) io.Writer {
 	o := new(TCPOutput)
 
@@ -32,19 +38,36 @@ func NewTCPOutput(address string) io.Writer {
 }
 
 func (o *TCPOutput) worker() {
-	conn, _ := o.connect(o.address)
+	conn, err := o.connect(o.address)
+	for ; err != nil; conn, err = o.connect(o.address) {
+		time.Sleep(2 * time.Second)
+	}
+
 	defer conn.Close()
 
 	for {
 		conn.Write(<-o.buf)
+		_, err := conn.Write([]byte(payloadSeparator))
+
+		if err != nil {
+			log.Println("Worker failed on write, exitings and starting new worker")
+			go o.worker()
+			break
+		}
 	}
 }
 
 func (o *TCPOutput) Write(data []byte) (n int, err error) {
-	new_buf := make([]byte, len(data)+2)
-	data = append(data, []byte("¶")...)
-	copy(new_buf, data)
-	o.buf <- new_buf
+	if !isOriginPayload(data) {
+		return len(data), nil
+	}
+
+	// We have to copy, because sending data in multiple threads
+	newBuf := make([]byte, len(data))
+	copy(newBuf, data)
+
+	o.buf <- newBuf
+
 	if Settings.outputTCPStats {
 		o.bufStats.Write(len(o.buf))
 	}

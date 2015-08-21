@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"runtime/debug"
+	"runtime"
+	_ "runtime/debug"
 	"runtime/pprof"
 	"time"
 )
@@ -19,14 +20,17 @@ var (
 )
 
 func main() {
-	// Don't exit on panic
-	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(error); !ok {
-				fmt.Printf("PANIC: pkg: %v %s \n", r, debug.Stack())
-			}
-		}
-	}()
+	// // Don't exit on panic
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		fmt.Printf("PANIC: pkg: %v %s \n", r, debug.Stack())
+	// 	}
+	// }()
+
+	// If not set via env cariable
+	if len(os.Getenv("GOMAXPROCS")) == 0 {
+		runtime.GOMAXPROCS(runtime.NumCPU() * 2)
+	}
 
 	fmt.Println("Version:", VERSION)
 

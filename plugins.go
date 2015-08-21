@@ -4,27 +4,28 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"time"
 )
 
+// InOutPlugins struct for holding references to plugins
 type InOutPlugins struct {
 	Inputs  []io.Reader
 	Outputs []io.Writer
-
-	Modifiers []TrafficModifier
 }
 
-type ReaderOrWriter interface{}
-
+// Plugins holds all the plugin objects
 var Plugins *InOutPlugins = new(InOutPlugins)
 
+// extractLimitOptions detects if plugin get called with limiter support
+// Returns address and limit
 func extractLimitOptions(options string) (string, string) {
 	split := strings.Split(options, "|")
 
 	if len(split) > 1 {
 		return split[0], split[1]
-	} else {
-		return split[0], ""
 	}
+
+	return split[0], ""
 }
 
 // Automatically detects type of plugin and initialize it
@@ -47,26 +48,28 @@ func registerPlugin(constructor interface{}, options ...interface{}) {
 
 	// Calling our constructor with list of given options
 	plugin := vc.Call(vo)[0].Interface()
-	plugin_wrapper := plugin
+	pluginWrapper := plugin
 
 	if limit != "" {
-		plugin_wrapper = NewLimiter(plugin, limit)
+		pluginWrapper = NewLimiter(plugin, limit)
 	} else {
-		plugin_wrapper = plugin
+		pluginWrapper = plugin
 	}
 
-	if _, ok := plugin.(io.Reader); ok {
-		for _, options := range Settings.inputModifier {
-			plugin_wrapper = NewTrafficModifier(plugin_wrapper, options)
-		}
-		Plugins.Inputs = append(Plugins.Inputs, plugin_wrapper.(io.Reader))
+	_, isR := plugin.(io.Reader)
+	_, isW := plugin.(io.Writer)
+
+	// Some of the output can be Readers as well because return responses
+	if isR && !isW {
+		Plugins.Inputs = append(Plugins.Inputs, pluginWrapper.(io.Reader))
 	}
 
-	if _, ok := plugin.(io.Writer); ok {
-		Plugins.Outputs = append(Plugins.Outputs, plugin_wrapper.(io.Writer))
+	if isW {
+		Plugins.Outputs = append(Plugins.Outputs, pluginWrapper.(io.Writer))
 	}
 }
 
+// InitPlugins specify and initialize all available plugins
 func InitPlugins() {
 	for _, options := range Settings.inputDummy {
 		registerPlugin(NewDummyInput, options)
@@ -77,7 +80,7 @@ func InitPlugins() {
 	}
 
 	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options)
+		registerPlugin(NewRAWInput, options, time.Duration(0))
 	}
 
 	for _, options := range Settings.inputTCP {
@@ -100,7 +103,16 @@ func InitPlugins() {
 		registerPlugin(NewHTTPInput, options)
 	}
 
+	// If we explicitly set Host header http output should not rewrite it
+	// Fix: https://github.com/buger/gor/issues/174
+	for _, header := range Settings.modifierConfig.headers {
+		if header.Name == "Host" {
+			Settings.outputHTTPConfig.OriginalHost = true
+			break
+		}
+	}
+
 	for _, options := range Settings.outputHTTP {
-		registerPlugin(NewHTTPOutput, options, Settings.outputHTTPHeaders, Settings.outputHTTPMethods, Settings.outputHTTPUrlRegexp, Settings.outputHTTPHeaderFilters, Settings.outputHTTPHeaderHashFilters, Settings.outputHTTPElasticSearch, Settings.outputHTTPUrlRewrite)
+		registerPlugin(NewHTTPOutput, options, &Settings.outputHTTPConfig)
 	}
 }

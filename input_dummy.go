@@ -4,10 +4,12 @@ import (
 	"time"
 )
 
+// DummyInput used for debugging. It generate 1 "GET /"" request per second.
 type DummyInput struct {
 	data chan []byte
 }
 
+// NewDummyInput constructor for DummyInput
 func NewDummyInput(options string) (di *DummyInput) {
 	di = new(DummyInput)
 	di.data = make(chan []byte)
@@ -19,9 +21,12 @@ func NewDummyInput(options string) (di *DummyInput) {
 
 func (i *DummyInput) Read(data []byte) (int, error) {
 	buf := <-i.data
-	copy(data, buf)
 
-	return len(buf), nil
+	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano())
+	copy(data[0:len(header)], header)
+	copy(data[len(header):], buf)
+
+	return len(buf) + len(header), nil
 }
 
 func (i *DummyInput) emit() {
@@ -30,7 +35,7 @@ func (i *DummyInput) emit() {
 	for {
 		select {
 		case <-ticker.C:
-			i.data <- []byte("GET / HTTP/1.1\r\n\r\n")
+			i.data <- []byte("POST /pub/WWW/å HTTP/1.1\nHost: www.w3.org\r\n\r\na=1&b=2")
 		}
 	}
 }
